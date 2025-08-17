@@ -1,5 +1,5 @@
 export interface Env {
-    MY_BUCKET: R2Bucket;
+    MAIN_BUCKET: R2Bucket;
     AUTH_KEY_SECRET: string;
 }
 
@@ -27,7 +27,7 @@ export default {
         
         switch (request.method) {
             case "PUT":
-                await env.MY_BUCKET.put(key, request.body);
+                await env.MAIN_BUCKET.put(key, request.body);
                 return new Response(`Put ${key} successfully!`);
 
             default:

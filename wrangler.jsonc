@@ -24,7 +24,7 @@
 	
 	"r2_buckets": [
 		{
-		"binding": "MY_BUCKET",
+		"binding": "MAIN_BUCKET",
 		"bucket_name": "experiences"
 		}
 	]
