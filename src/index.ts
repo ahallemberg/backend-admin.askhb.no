@@ -18,6 +18,18 @@ function authorizeRequest(request: Request, env: Env, key: string): boolean {
 
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        if (request.method === 'OPTIONS') {
+            return new Response(null, {
+                status: 200, 
+                headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'PUT',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Shared-Secret',
+                'Access-Control-Max-Age': '86400',
+                },
+            });
+            }
+            
         const url = new URL(request.url);
         const key = url.pathname.slice(1);
 
