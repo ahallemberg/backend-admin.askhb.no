@@ -20,23 +20,25 @@ export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
         const url = new URL(request.url);
         const key = url.pathname.slice(1);
+
+        const headers = {
+            'Access-Control-Allow-Origin': '*', 
+            'Access-Control-Allow-Methods': 'PUT',
+        }
         
         if (!authorizeRequest(request, env, key)) {
-            return new Response("Forbidden", { status: 403 });
+            return new Response("Forbidden", { status: 403, headers });
         }
         
         switch (request.method) {
             case "PUT":
                 await env.MAIN_BUCKET.put(key, request.body);
-                return new Response(`Put ${key} successfully!`);
+                return new Response(`Put ${key} successfully!`, {status: 200, headers});
 
             default:
                 return new Response(`Method Not Allowed `, {
                     status: 405,
-                    headers: {
-                        Allow: "PUT, GET, DELETE",
-                    },
-                    
+                    headers
                 });
         }
     },
