@@ -44,7 +44,15 @@ export default {
         
         switch (request.method) {
             case "PUT":
-                await env.MAIN_BUCKET.put(key, request.body);
+                // Store the uploaded Content-Type. Without it R2 serves the object
+                // with no type at all and the browser sniffs the bytes, which both
+                // breaks anything relying on a declared type and lets an uploaded
+                // file be interpreted as something other than what it is.
+                await env.MAIN_BUCKET.put(key, request.body, {
+                    httpMetadata: {
+                        contentType: request.headers.get("content-type") ?? "application/octet-stream"
+                    }
+                });
                 return new Response(`Put ${key} successfully!`, {status: 200, headers});
 
             default:
