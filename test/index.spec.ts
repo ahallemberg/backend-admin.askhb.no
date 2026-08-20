@@ -1,18 +1,3 @@
-// NOTE: `npm test` currently cannot run these. The pinned
-// @cloudflare/vitest-pool-workers (0.8.64, current is 0.22.x) fails to pop its
-// isolated R2 storage stack — it asserts on a `.sqlite` path and gets
-// `.sqlite-shm` — and aborts the run before any assertion is reported. Setting
-// `isolatedStorage: false` does not help; upgrading the pool pulls in a vitest
-// major that the config no longer loads under. Until the tooling is upgraded
-// properly, verify with `wrangler dev` and inspect the local bucket:
-//
-//   npx wrangler dev --local
-//   # PUT with a Content-Type, then:
-//   sqlite3 "$(find .wrangler -name '*.sqlite' | head -1)" \
-//     'SELECT key, http_metadata FROM _mf_objects;'
-//
-// These replace the untouched "Hello World" scaffold tests, which asserted
-// behaviour this worker has not had for a long time and also failed.
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { describe, it, expect } from 'vitest';
 import worker from '../src/index';
@@ -56,7 +41,16 @@ describe('PUT stores the uploaded content type', () => {
 	});
 
 	it('falls back to application/octet-stream when no type is sent', async () => {
-		const response = await put('untyped.bin', 'data', authed());
+		// A string body makes Request auto-set text/plain, so send bytes instead —
+		// an ArrayBufferView adds no Content-Type of its own.
+		const request = new IncomingRequest('https://worker.askhb.no/untyped.bin', {
+			method: 'PUT',
+			headers: { [AUTH_HEADER]: env.AUTH_KEY_SECRET },
+			body: new Uint8Array([1, 2, 3]),
+		});
+		const ctx = createExecutionContext();
+		const response = await worker.fetch(request, env, ctx);
+		await waitOnExecutionContext(ctx);
 		expect(response.status).toBe(200);
 
 		const stored = await env.MAIN_BUCKET.get('untyped.bin');
