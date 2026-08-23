@@ -116,12 +116,13 @@ const darkOptions = {
  * flip or after it.
  *
  * Animations need their own treatment, because none of the above touches them.
- * They are made to finish rather than switched off: `animation: none` would drop
- * an element back to whatever it looks like before its animation runs, and
- * veivett.no's reveal starts at zero opacity, so switching it off would capture
- * an empty page. Running it to completion in a fraction of a millisecond lands
- * on the end state instead. This is the rule the site itself applies to readers
- * who ask for reduced motion, so the resting state is one its author chose.
+ * They are made to finish rather than switched off: `animation: none` drops an
+ * element back to however it looks before its animation runs, which for the
+ * common reveal -- a base rule holding it at zero opacity, an animation fading
+ * it in -- is an invisible element. Running it to completion in a fraction of a
+ * millisecond lands on the end state whichever way the page is written. This is
+ * the rule a site applies for readers who ask for reduced motion, so the
+ * resting state is one its author chose.
  *
  * That matters on the page this was tuned against: its reveal runs 550ms on
  * twelve elements with staggered delays out to 530ms, settling around 1080ms.
@@ -138,9 +139,11 @@ const NO_TRANSITIONS = "*,*::before,*::after{transition:none !important;"
     + "animation-iteration-count:1 !important}";
 
 /*
- * Not for transitions or animations -- those are settled by the rule above,
- * whatever their duration. This is for what CSS cannot switch off: a late
- * layout pass, a lazily loaded image, a webfont swapping in.
+ * Not for CSS transitions or CSS animations -- the rule above settles those
+ * whatever their duration. This is for everything it cannot reach: motion
+ * driven from script, whether through the Web Animations API or by writing
+ * inline styles frame by frame, and the ordinary business of a late layout
+ * pass, a lazily loaded image, or a webfont swapping in.
  */
 const SETTLE_MS = 600;
 

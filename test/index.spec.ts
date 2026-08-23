@@ -326,8 +326,9 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 			const { options } = browser.calls[0];
 			expect(options.addStyleTag[0].content).toContain('transition:none !important');
 			expect(options.addStyleTag[0].content).toContain('animation-duration:.001ms !important');
-			// Not `animation:none`, which would drop an element back to how it looks
-			// before its animation runs -- zero opacity, on the page this was tuned on.
+			// Not `animation:none`, which drops an element back to how it looks before
+			// its animation runs -- invisible, wherever a base rule holds the element
+			// at zero opacity and the animation is what fades it in.
 			expect(options.addStyleTag[0].content).not.toContain('animation:none');
 			expect(options.waitForTimeout).toBeGreaterThanOrEqual(600);
 		}

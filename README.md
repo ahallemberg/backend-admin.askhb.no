@@ -93,8 +93,8 @@ veivett.no's class cards 70% of the way between the two palettes, showing a
 colour that exists in neither theme. Entrance animations are the same hazard
 with a longer tail.
 
-The 600ms wait that follows is for what CSS cannot switch off — a late layout
-pass, a lazy image, a webfont swapping in.
+The 600ms wait is for what CSS cannot switch off — motion driven from script,
+a late layout pass, a lazy image, a webfont swapping in.
 
 **Only ask for a theme the site actually has.** Dark is forced by injecting a
 script that sets `data-theme="dark"` and adds a `dark` class, because the quick
