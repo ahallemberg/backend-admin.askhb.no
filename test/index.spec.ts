@@ -266,7 +266,11 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 		viewport: { width: 1280, height: 800 },
 		gotoOptions: { waitUntil: 'networkidle0', timeout: 30000 },
 		screenshotOptions: { type: 'png' },
-		addStyleTag: [{ content: '*,*::before,*::after{transition:none !important}' }],
+		addStyleTag: [{
+			content: '*,*::before,*::after{transition:none !important;'
+				+ 'animation-duration:.001ms !important;animation-delay:0s !important;'
+				+ 'animation-iteration-count:1 !important}',
+		}],
 		waitForTimeout: 600,
 	};
 
@@ -281,27 +285,6 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 	 * `emulateMediaFeatures` is the obvious way to force dark and is one it
 	 * rejects.
 	 */
-	/*
-	 * The fix for a capture taken mid-transition. Forcing dark flips the theme
-	 * after the page has painted, so anything carrying a CSS transition animates
-	 * towards its new value instead of jumping, and the shot lands on a colour
-	 * that exists in neither theme. Asserted on both themes, because the pair has
-	 * to be produced the same way to be comparable at all.
-	 *
-	 * The toEqual tests below pin these exactly; this one names why they are
-	 * there, so removing them fails a test that says what was lost.
-	 */
-	it('suppresses transitions and lets the page settle, on both themes', async () => {
-		for (const themes of [['light'], ['dark']]) {
-			const browser = stubBrowser();
-			await screenshot({ ...VEIVETT, themes }, { browser: browser.binding });
-
-			const { options } = browser.calls[0];
-			expect(options.addStyleTag[0].content).toContain('transition:none !important');
-			expect(options.waitForTimeout).toBeGreaterThanOrEqual(300);
-		}
-	});
-
 	it('asks for a light capture with exactly these options', async () => {
 		const browser = stubBrowser();
 		await screenshot(VEIVETT, { browser: browser.binding });
@@ -322,6 +305,32 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 					+ "document.documentElement.classList.add('dark');",
 			}],
 		});
+	});
+
+	/*
+	 * The fix for a capture taken mid-motion. Forcing dark flips the theme after the
+	 * page has painted, so anything carrying a CSS transition animates towards
+	 * its new value instead of jumping, and the shot lands on a colour that
+	 * exists in neither theme. Entrance animations are the same hazard with a
+	 * longer tail, and a rule that only names transitions does not touch them. Asserted on both themes, because the pair has
+	 * to be produced the same way to be comparable at all.
+	 *
+	 * The toEqual tests above pin these exactly; this one names why they are
+	 * there, so removing them fails a test that says what was lost.
+	 */
+	it('suppresses transitions and lets the page settle, on both themes', async () => {
+		for (const themes of [['light'], ['dark']]) {
+			const browser = stubBrowser();
+			await screenshot({ ...VEIVETT, themes }, { browser: browser.binding });
+
+			const { options } = browser.calls[0];
+			expect(options.addStyleTag[0].content).toContain('transition:none !important');
+			expect(options.addStyleTag[0].content).toContain('animation-duration:.001ms !important');
+			// Not `animation:none`, which would drop an element back to how it looks
+			// before its animation runs -- zero opacity, on the page this was tuned on.
+			expect(options.addStyleTag[0].content).not.toContain('animation:none');
+			expect(options.waitForTimeout).toBeGreaterThanOrEqual(600);
+		}
 	});
 });
 

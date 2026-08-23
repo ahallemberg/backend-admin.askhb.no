@@ -109,19 +109,39 @@ const darkOptions = {
  * exists in neither theme on a page that otherwise looked correct. It is the
  * kind of wrong that survives review, because nothing about it looks broken.
  *
- * Both are belt and braces on purpose. The style tag only helps if it is applied
- * before the script runs, which is the quick action's business rather than ours;
- * the wait covers the case where it is not, and covers transitions this cannot
- * reach -- inline styles, or anything driven by the Web Animations API.
+ * Ordering does not matter, which is worth stating because it looks like it
+ * should. When a property stops being transitionable the running transition is
+ * cancelled and the element renders its after-change style at once, so the rule
+ * snaps whatever is in flight to its final value whenever it lands -- before the
+ * flip or after it.
+ *
+ * Animations need their own treatment, because none of the above touches them.
+ * They are made to finish rather than switched off: `animation: none` would drop
+ * an element back to whatever it looks like before its animation runs, and
+ * veivett.no's reveal starts at zero opacity, so switching it off would capture
+ * an empty page. Running it to completion in a fraction of a millisecond lands
+ * on the end state instead. This is the rule the site itself applies to readers
+ * who ask for reduced motion, so the resting state is one its author chose.
+ *
+ * That matters on the page this was tuned against: its reveal runs 550ms on
+ * twelve elements with staggered delays out to 530ms, settling around 1080ms.
+ * Waiting that out would have meant a wait nearly twice this one and still no
+ * guarantee -- the bundle also carries infinite spin and pulse keyframes, which
+ * no wait makes deterministic.
  *
  * Applied to every capture rather than only the dark one. The pair is the same
  * screenshot in two palettes, so both have to be produced the same way: a
  * difference in method between them would read as a difference in the site.
  */
-const NO_TRANSITIONS = "*,*::before,*::after{transition:none !important}";
+const NO_TRANSITIONS = "*,*::before,*::after{transition:none !important;"
+    + "animation-duration:.001ms !important;animation-delay:0s !important;"
+    + "animation-iteration-count:1 !important}";
 
-// Comfortably past a typical 150-300ms transition without being a cost worth
-// counting against the daily allowance.
+/*
+ * Not for transitions or animations -- those are settled by the rule above,
+ * whatever their duration. This is for what CSS cannot switch off: a late
+ * layout pass, a lazily loaded image, a webfont swapping in.
+ */
 const SETTLE_MS = 600;
 
 type Theme = "light" | "dark";
