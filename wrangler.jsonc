@@ -27,13 +27,32 @@
 		"binding": "MAIN_BUCKET",
 		"bucket_name": "experiences"
 		}
-	]
+	],
 
 	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
+	 * Browser Run, for POST /screenshot.
+	 *
+	 * `remote` because it has no local simulator: under `wrangler dev` the
+	 * binding talks to the real service while R2 stays simulated, so a capture
+	 * can be exercised end to end without writing to the live bucket. Note that
+	 * such a capture spends the real daily allowance.
+	 *
+	 * The test run opts out of remote bindings in vitest.config.mts, so this
+	 * flag does not make the suite need credentials.
 	 */
-	// "vars": { "MY_VARIABLE": "production_value" }
+	"browser": {
+		"binding": "BROWSER",
+		"remote": true
+	},
+
+	/**
+	 * Hosts POST /screenshot may render, matched exactly -- so each spelling
+	 * that should work is listed, `www.` included. Adding a site takes a deploy.
+	 * See src/index.ts for what this does and does not constrain.
+	 */
+	"vars": {
+		"SCREENSHOT_HOSTS": "veivett.no,www.veivett.no,trafikkskiltene.no,www.trafikkskiltene.no"
+	}
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
