@@ -97,6 +97,33 @@ const darkOptions = {
     addScriptTag: [{ content: DARK_SCRIPT }],
 };
 
+/*
+ * Transitions are switched off, and the page is given a moment to settle, before
+ * the shot is taken.
+ *
+ * Forcing dark flips the theme after the page has already painted in light, so
+ * anything carrying a CSS transition animates towards its dark value instead of
+ * jumping to it. veivett.no's class cards do exactly that: a capture taken
+ * straight after the flip caught them 69.5% of the way between the two
+ * palettes, an even interpolation on all three channels, showing a colour that
+ * exists in neither theme on a page that otherwise looked correct. It is the
+ * kind of wrong that survives review, because nothing about it looks broken.
+ *
+ * Both are belt and braces on purpose. The style tag only helps if it is applied
+ * before the script runs, which is the quick action's business rather than ours;
+ * the wait covers the case where it is not, and covers transitions this cannot
+ * reach -- inline styles, or anything driven by the Web Animations API.
+ *
+ * Applied to every capture rather than only the dark one. The pair is the same
+ * screenshot in two palettes, so both have to be produced the same way: a
+ * difference in method between them would read as a difference in the site.
+ */
+const NO_TRANSITIONS = "*,*::before,*::after{transition:none !important}";
+
+// Comfortably past a typical 150-300ms transition without being a cost worth
+// counting against the daily allowance.
+const SETTLE_MS = 600;
+
 type Theme = "light" | "dark";
 
 // Also the capture order, and the only two values there are -- which is what
@@ -117,6 +144,8 @@ const capture = async (env: Env, url: string, theme: Theme): Promise<ArrayBuffer
         viewport: VIEWPORT,
         gotoOptions: { waitUntil: "networkidle0", timeout: 30000 },
         screenshotOptions: { type: "png" },
+        addStyleTag: [{ content: NO_TRANSITIONS }],
+        waitForTimeout: SETTLE_MS,
         ...(theme === "dark" ? darkOptions : {}),
     });
 

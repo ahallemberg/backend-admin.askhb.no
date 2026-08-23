@@ -81,7 +81,14 @@ curl -X POST "https://workerurl/screenshot" \
 ```
 
 Captures are 1280x800 — a desktop viewport, in the 16:10 the portfolio card
-crops its screenshot to.
+crops its screenshot to. Any path on an allowed host can be captured, not just
+the landing page.
+
+Transitions are suppressed and the page is given 600ms to settle before the
+shot. Forcing dark flips the theme after the page has painted, so anything with
+a CSS transition animates towards its dark value instead of jumping — a capture
+taken straight after the flip caught veivett.no's class cards 70% of the way
+between the two palettes, showing a colour that exists in neither theme.
 
 **Only ask for a theme the site actually has.** Dark is forced by injecting a
 script that sets `data-theme="dark"` and adds a `dark` class, because the quick

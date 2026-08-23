@@ -266,6 +266,8 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 		viewport: { width: 1280, height: 800 },
 		gotoOptions: { waitUntil: 'networkidle0', timeout: 30000 },
 		screenshotOptions: { type: 'png' },
+		addStyleTag: [{ content: '*,*::before,*::after{transition:none !important}' }],
+		waitForTimeout: 600,
 	};
 
 	/*
@@ -279,6 +281,27 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 	 * `emulateMediaFeatures` is the obvious way to force dark and is one it
 	 * rejects.
 	 */
+	/*
+	 * The fix for a capture taken mid-transition. Forcing dark flips the theme
+	 * after the page has painted, so anything carrying a CSS transition animates
+	 * towards its new value instead of jumping, and the shot lands on a colour
+	 * that exists in neither theme. Asserted on both themes, because the pair has
+	 * to be produced the same way to be comparable at all.
+	 *
+	 * The toEqual tests below pin these exactly; this one names why they are
+	 * there, so removing them fails a test that says what was lost.
+	 */
+	it('suppresses transitions and lets the page settle, on both themes', async () => {
+		for (const themes of [['light'], ['dark']]) {
+			const browser = stubBrowser();
+			await screenshot({ ...VEIVETT, themes }, { browser: browser.binding });
+
+			const { options } = browser.calls[0];
+			expect(options.addStyleTag[0].content).toContain('transition:none !important');
+			expect(options.waitForTimeout).toBeGreaterThanOrEqual(300);
+		}
+	});
+
 	it('asks for a light capture with exactly these options', async () => {
 		const browser = stubBrowser();
 		await screenshot(VEIVETT, { browser: browser.binding });
@@ -300,7 +323,6 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 			}],
 		});
 	});
-
 });
 
 describe('POST /screenshot themes', () => {
