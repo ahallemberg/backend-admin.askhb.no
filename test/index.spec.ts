@@ -264,7 +264,7 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 		url: 'https://veivett.no/',
 		// A desktop viewport, and the 16:10 the portfolio card crops to.
 		viewport: { width: 1280, height: 800 },
-		gotoOptions: { waitUntil: 'networkidle0', timeout: 30000 },
+		gotoOptions: { waitUntil: 'networkidle2', timeout: 30000 },
 		screenshotOptions: { type: 'png' },
 		addStyleTag: [{
 			content: '*,*::before,*::after{transition:none !important;'
@@ -332,6 +332,102 @@ describe('POST /screenshot asks the browser for the right thing', () => {
 			expect(options.addStyleTag[0].content).not.toContain('animation:none');
 			expect(options.waitForTimeout).toBeGreaterThanOrEqual(600);
 		}
+	});
+});
+
+/*
+ * The bug this exists for: veivett.no/klasse/bil paints in about 2.4s and then
+ * holds a connection open indefinitely, so `networkidle0` was never satisfied
+ * -- not at 30s and not at 55s -- and every capture of that page failed with no
+ * image while the page sat there fully rendered. The condition, not the page,
+ * was the thing that could not finish.
+ */
+describe('POST /screenshot survives a page that never goes idle', () => {
+	const NAVIGATION_TIMEOUT = JSON.stringify({
+		success: false,
+		errors: [{
+			code: 6002,
+			message: 'A timeout was reached. Check gotoOptions/waitForSelector/waitForTimeout/actionTimeout options.',
+			detail: 'Navigation timeout of 30000 ms exceeded',
+		}],
+	});
+
+	const timeoutResponse = () =>
+		new Response(NAVIGATION_TIMEOUT, { status: 422, headers: { 'Content-Type': 'application/json' } });
+
+	it('asks for the strict condition first', async () => {
+		const browser = stubBrowser();
+		await screenshot(VEIVETT, { browser: browser.binding });
+
+		expect(browser.calls).toHaveLength(1);
+		expect(browser.calls[0].options.gotoOptions.waitUntil).toBe('networkidle2');
+	});
+
+	it('falls back to load when the navigation times out, and stores the image', async () => {
+		const browser = stubBrowser(call =>
+			call.options.gotoOptions.waitUntil === 'networkidle2' ? timeoutResponse() : pngResponse());
+
+		const response = await screenshot(
+			{ ...VEIVETT, key: 'screenshots/never-idle' },
+			{ browser: browser.binding },
+		);
+
+		expect(response.status).toBe(200);
+		expect(browser.calls.map(call => call.options.gotoOptions.waitUntil)).toEqual(['networkidle2', 'load']);
+		expect(await env.MAIN_BUCKET.get('screenshots/never-idle-light.png')).not.toBeNull();
+	});
+
+	/*
+	 * The retry changes only the wait. A fallback that also dropped the motion
+	 * rule or the dark script would answer 200 with an image taken a different
+	 * way from every other capture, which is the one failure nobody would see.
+	 */
+	it('retries with the same options but for the wait', async () => {
+		const browser = stubBrowser(call =>
+			call.options.gotoOptions.waitUntil === 'networkidle2' ? timeoutResponse() : pngResponse());
+		await screenshot({ ...VEIVETT, themes: ['dark'] }, { browser: browser.binding });
+
+		const [first, second] = browser.calls;
+		expect(second.options).toEqual({ ...first.options, gotoOptions: { waitUntil: 'load', timeout: 30000 } });
+		expect(second.options.addScriptTag[0].content).toContain("data-theme','dark'");
+	});
+
+	// Both conditions timing out is a real failure, not a third attempt.
+	it('gives up when the fallback times out too', async () => {
+		const browser = stubBrowser(() => timeoutResponse());
+		const response = await screenshot(
+			{ ...VEIVETT, key: 'screenshots/hopeless' },
+			{ browser: browser.binding },
+		);
+
+		expect(response.status).toBe(502);
+		expect((await response.json() as any).error).toContain('422');
+		expect(browser.calls).toHaveLength(2);
+	});
+
+	/*
+	 * Only the navigation timeout is worth a second browser session. A rate
+	 * limit or a rejected option fails the same way however the page is waited
+	 * for, and the account's three concurrent browsers are shared with the
+	 * capture running beside this one.
+	 */
+	it('does not retry a 422 that is not a navigation timeout', async () => {
+		const browser = stubBrowser(() => new Response(
+			JSON.stringify({ success: false, errors: [{ code: 6001, message: 'invalid option' }] }),
+			{ status: 422, headers: { 'Content-Type': 'application/json' } },
+		));
+		const response = await screenshot(VEIVETT, { browser: browser.binding });
+
+		expect(response.status).toBe(502);
+		expect(browser.calls).toHaveLength(1);
+	});
+
+	it('does not retry a status that is not 422', async () => {
+		const browser = stubBrowser(() => new Response(NAVIGATION_TIMEOUT, { status: 429 }));
+		const response = await screenshot(VEIVETT, { browser: browser.binding });
+
+		expect(response.status).toBe(502);
+		expect(browser.calls).toHaveLength(1);
 	});
 });
 

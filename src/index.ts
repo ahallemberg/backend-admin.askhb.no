@@ -147,6 +147,71 @@ const NO_TRANSITIONS = "*,*::before,*::after{transition:none !important;"
  */
 const SETTLE_MS = 600;
 
+/*
+ * When the page counts as loaded, in the order the conditions are tried.
+ *
+ * `networkidle0` -- zero connections for 500ms -- was the original choice and
+ * is the wrong precondition, because a page is free never to satisfy it. Some
+ * pages hold a connection open for as long as they are on screen, and
+ * veivett.no/klasse/bil is one: it paints in about 2.4s, finishes every request
+ * Resource Timing can see by then, and still had a connection open at 55s. The
+ * navigation therefore never resolved, Browser Run answered 422 with
+ * "Navigation timeout of 30000 ms exceeded", and the capture failed with no
+ * image at all -- for a page that had been sitting there fully rendered for
+ * most of a minute. The front pages of the same two sites do reach idle, which
+ * is why this looked like a bug about custom URLs.
+ *
+ * `networkidle2` allows up to two such connections, which is the case it was
+ * added for, and it settles that page at ~3.0s. It is strictly weaker than
+ * networkidle0 -- anything that satisfied the old condition satisfies this one
+ * no later -- so no capture that worked before waits longer now.
+ *
+ * `load` is second because networkidle2 is a looser version of the same
+ * unsatisfiable shape rather than a fix for it: a page holding three
+ * connections open would fail exactly as before. `load` is the one condition a
+ * page cannot withhold, so a capture can no longer fail on the wait alone. It
+ * is a fallback and not the primary because it fires before the tail of the
+ * page's own loading -- five of that page's 64 requests land after it -- and
+ * SETTLE_MS is sized for motion, not for a page still fetching itself.
+ */
+const WAIT_UNTIL = ["networkidle2", "load"] as const;
+
+/*
+ * The navigation timeout is the only failure a looser condition can fix.
+ * Browser Run reports it as 422 with error code 6002; a rate limit, a rejected
+ * option or an upstream fault is not something a different `waitUntil` helps
+ * with, and retrying one would spend a second browser session to fail the same
+ * way. Read from the parsed body rather than by matching text, so that
+ * reformatted JSON does not quietly turn the retry off.
+ */
+const NAVIGATION_TIMEOUT_CODE = 6002;
+
+const isNavigationTimeout = (status: number, body: string): boolean => {
+    if (status !== 422) return false;
+    try {
+        const parsed = JSON.parse(body) as { errors?: unknown };
+        return Array.isArray(parsed.errors)
+            && parsed.errors.some(entry =>
+                typeof entry === "object" && entry !== null
+                && (entry as { code?: unknown }).code === NAVIGATION_TIMEOUT_CODE);
+    } catch {
+        return false;
+    }
+};
+
+/*
+ * Upstream's own words go to the log rather than into the response -- the
+ * caller can act on the status alone. Only a text body is worth logging:
+ * reading an image as text corrupts it and the runtime warns about it, so a
+ * binary body is described rather than quoted.
+ */
+const describeBody = async (response: Response): Promise<string> => {
+    const type = response.headers.get("content-type") ?? "";
+    return type.startsWith("image/")
+        ? `${type} body`
+        : (await response.text()).slice(0, 500);
+};
+
 type Theme = "light" | "dark";
 
 // Also the capture order, and the only two values there are -- which is what
@@ -162,52 +227,53 @@ const isPng = (bytes: Uint8Array): boolean =>
     && PNG_SIGNATURE.every((byte, index) => bytes[index] === byte);
 
 const capture = async (env: Env, url: string, theme: Theme): Promise<ArrayBuffer> => {
-    const response = await env.BROWSER.quickAction("screenshot", {
-        url,
-        viewport: VIEWPORT,
-        gotoOptions: { waitUntil: "networkidle0", timeout: 30000 },
-        screenshotOptions: { type: "png" },
-        addStyleTag: [{ content: NO_TRANSITIONS }],
-        waitForTimeout: SETTLE_MS,
-        ...(theme === "dark" ? darkOptions : {}),
-    });
+    for (const [index, waitUntil] of WAIT_UNTIL.entries()) {
+        const response = await env.BROWSER.quickAction("screenshot", {
+            url,
+            viewport: VIEWPORT,
+            gotoOptions: { waitUntil, timeout: 30000 },
+            screenshotOptions: { type: "png" },
+            addStyleTag: [{ content: NO_TRANSITIONS }],
+            waitForTimeout: SETTLE_MS,
+            ...(theme === "dark" ? darkOptions : {}),
+        });
 
-    /*
-     * Upstream's own words go to the log rather than into the response -- the
-     * caller can act on the status alone. Only a text body is worth logging:
-     * reading an image as text corrupts it and the runtime warns about it, so a
-     * binary body is described rather than quoted.
-     */
-    const detail = async (): Promise<string> => {
-        const type = response.headers.get("content-type") ?? "";
-        return type.startsWith("image/")
-            ? `${type} body`
-            : (await response.text()).slice(0, 500);
-    };
+        if (!response.ok) {
+            const body = await describeBody(response);
+            console.error(`Browser Run ${response.status} for ${url} on ${waitUntil}: ${body}`);
 
-    if (!response.ok) {
-        console.error(`Browser Run ${response.status} for ${url}: ${await detail()}`);
-        throw new Error(`Browser Run returned ${response.status}`);
+            // The last condition has nothing looser to fall back to, so its
+            // timeout is a real failure rather than a reason to try again.
+            if (isNavigationTimeout(response.status, body) && index < WAIT_UNTIL.length - 1) {
+                continue;
+            }
+            throw new Error(`Browser Run returned ${response.status}`);
+        }
+
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.startsWith("image/png")) {
+            console.error(`Browser Run sent ${contentType} for ${url}: ${await describeBody(response)}`);
+            throw new Error(`Expected image/png, got "${contentType}"`);
+        }
+
+        /*
+         * The bytes are checked, not just the declared type. An empty body, or one
+         * that is some other format, otherwise stores as a permanent broken object
+         * under a .png key -- there is no delete here to take it back, and the only
+         * signal the caller would get is a success.
+         */
+        const image = await response.arrayBuffer();
+        if (!isPng(new Uint8Array(image))) {
+            throw new Error(`Response was ${image.byteLength} bytes and did not begin with a PNG header`);
+        }
+
+        return image;
     }
 
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.startsWith("image/png")) {
-        console.error(`Browser Run sent ${contentType} for ${url}: ${await detail()}`);
-        throw new Error(`Expected image/png, got "${contentType}"`);
-    }
-
-    /*
-     * The bytes are checked, not just the declared type. An empty body, or one
-     * that is some other format, otherwise stores as a permanent broken object
-     * under a .png key -- there is no delete here to take it back, and the only
-     * signal the caller would get is a success.
-     */
-    const image = await response.arrayBuffer();
-    if (!isPng(new Uint8Array(image))) {
-        throw new Error(`Response was ${image.byteLength} bytes and did not begin with a PNG header`);
-    }
-
-    return image;
+    // Unreachable: every iteration returns, throws, or is followed by another.
+    // TypeScript cannot see that WAIT_UNTIL is not empty, and a bare fall-out
+    // would type as undefined.
+    throw new Error("No wait condition was tried");
 };
 
 const badRequest = (message: string) =>
