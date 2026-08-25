@@ -6,7 +6,9 @@
 
 **Architecture:** One optional secret (`DEPLOY_HOOK_URL`) on the worker, one small function called after a successful `PUT`, dispatched through `ctx.waitUntil` so it never delays or fails the save response. Absent secret means no hook fires, which keeps dev, tests and a pre-hook deploy all working.
 
-**Tech Stack:** Cloudflare Workers, vitest with `@cloudflare/vitest-pool-workers` and its `fetchMock`.
+**Tech Stack:** Cloudflare Workers, vitest with `@cloudflare/vitest-pool-workers`.
+
+**Execution amendment:** this pool version (0.22.0, the `cloudflareTest` plugin API) does not export `fetchMock` from `cloudflare:test`, so the tests stub the global fetch with `vi.stubGlobal` instead — the handler is invoked directly, so worker code shares the test runtime's global fetch, and bindings are unaffected. This gives strictly stronger assertions (exact URL, exact call count, a not-called case). The test code below is the shipped version.
 
 ## Global Constraints
 
@@ -33,72 +35,16 @@
 
 - [ ] **Step 1: Write the failing test — `test/deploy-hook.spec.ts`**
 
-```ts
-import { env, createExecutionContext, waitOnExecutionContext, fetchMock } from 'cloudflare:test';
-import { beforeAll, afterEach, describe, it, expect } from 'vitest';
-import worker from '../src/index';
-
-const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
-
-const HOOK_ORIGIN = 'https://hooks.invalid';
-const HOOK_PATH = '/deploy/test-hook';
-
-const putWithHook = async (hookUrl: string | undefined) => {
-	const request = new IncomingRequest('https://worker.askhb.no/personalinfo.json', {
-		method: 'PUT',
-		headers: {
-			'X-Custom-API-Key': env.AUTH_KEY_SECRET,
-			'Content-Type': 'application/json',
-		},
-		body: '{"name":"Ask"}',
-	});
-	const ctx = createExecutionContext();
-	const hookedEnv = { ...env, DEPLOY_HOOK_URL: hookUrl };
-	const response = await worker.fetch(request, hookedEnv, ctx);
-	await waitOnExecutionContext(ctx);
-	return response;
-};
-
-beforeAll(() => {
-	fetchMock.activate();
-	fetchMock.disableNetConnect();
-});
-
-/*
- * assertNoPendingInterceptors doubles as the positive assertion: a registered
- * interceptor that was never consumed fails the test, so "the hook was called
- * exactly once" is proven by registering exactly one.
- */
-afterEach(() => {
-	fetchMock.assertNoPendingInterceptors();
-});
-
-describe('deploy hook after a successful save', () => {
-	it('fires one POST to the configured hook', async () => {
-		fetchMock.get(HOOK_ORIGIN).intercept({ path: HOOK_PATH, method: 'POST' }).reply(200, 'ok');
-
-		const response = await putWithHook(`${HOOK_ORIGIN}${HOOK_PATH}`);
-		expect(response.status).toBe(200);
-	});
-
-	it('keeps the save successful when the hook fails', async () => {
-		fetchMock.get(HOOK_ORIGIN).intercept({ path: HOOK_PATH, method: 'POST' }).reply(500, 'boom');
-
-		const response = await putWithHook(`${HOOK_ORIGIN}${HOOK_PATH}`);
-		expect(response.status).toBe(200);
-	});
-
-	it('saves normally when no hook is configured', async () => {
-		const response = await putWithHook(undefined);
-		expect(response.status).toBe(200);
-	});
-});
-```
+The shipped test file is `test/deploy-hook.spec.ts` in this commit: it stubs the
+global fetch per test with `vi.stubGlobal('fetch', vi.fn(...))`, restores it with
+`vi.unstubAllGlobals()` in `afterEach`, and covers four cases: one POST fired to
+the exact hook URL, save stays 200 when the hook answers 500, save stays 200 when
+the hook fetch throws, and no call at all when `DEPLOY_HOOK_URL` is absent.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd /Users/ahallemberg/repos/personal/r2-worker-wt && npm install --no-audit --no-fund && npm test -- --run`
-Expected: the first test FAILS on `assertNoPendingInterceptors` (the interceptor is never consumed because nothing fetches the hook yet). The other two may pass; that is fine — the first one is the driver. The pre-existing `test/index.spec.ts` must still pass.
+Expected: the first test FAILS on the call-count assertion (the stubbed fetch is never called because nothing fetches the hook yet). The others may pass; the first one is the driver. The pre-existing `test/index.spec.ts` must still pass.
 
 - [ ] **Step 3: Implement in `src/index.ts`**
 

@@ -21,14 +21,29 @@ authentication, and for capturing project screenshots straight into the bucket.
    # Enter secure API key when prompted
    ```
 
-4. **Check the screenshot settings**
+4. **Set the deploy hook (optional)**
+
+   askhb.no is prerendered at build time, so a content save should trigger a
+   rebuild. Create a deploy hook for the askhb.no project in the Cloudflare
+   dashboard (Workers & Pages -> the askhb.no project -> Settings -> Builds &
+   deployments -> Deploy hooks), then:
+
+   ```bash
+   npx wrangler secret put DEPLOY_HOOK_URL
+   # Paste the hook URL when prompted
+   ```
+
+   Without the secret the worker saves normally and simply never triggers a
+   rebuild.
+
+5. **Check the screenshot settings**
 
    `wrangler.jsonc` declares the Browser Run binding and `SCREENSHOT_HOSTS`, the
    list of hosts `/screenshot` will render. Both ship in the config, so nothing
    is needed here beyond adding a host when a new site should be capturable —
    which takes a deploy.
 
-5. **Deploy**
+6. **Deploy**
    ```bash
    npx wrangler deploy
    ```
