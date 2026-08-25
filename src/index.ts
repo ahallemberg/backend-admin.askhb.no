@@ -35,11 +35,11 @@ const triggerDeployHook = (env: Env, ctx: ExecutionContext): void => {
         fetch(env.DEPLOY_HOOK_URL, { method: 'POST' })
             .then(response => {
                 if (!response.ok) {
-                    console.log(`Deploy hook responded ${response.status}`);
+                    console.error(`Deploy hook responded ${response.status}`);
                 }
             })
             .catch(error => {
-                console.log(`Deploy hook unreachable: ${error}`);
+                console.error(`Deploy hook unreachable: ${error}`);
             }),
     );
 };

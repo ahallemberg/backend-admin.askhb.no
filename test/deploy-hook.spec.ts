@@ -1,6 +1,17 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { beforeAll, afterEach, describe, it, expect, vi } from 'vitest';
 import worker from '../src/index';
+
+/*
+ * The deploy hook secret is production-only. If it ever lands in .dev.vars,
+ * the vitest pool loads it into env, and every existing PUT test would POST
+ * the real deploy hook on every run -- silently spending build quota with all
+ * tests green. Fail the suite loudly instead; these tests inject the URL
+ * per-call and never need it in the environment.
+ */
+beforeAll(() => {
+	expect(env.DEPLOY_HOOK_URL, 'DEPLOY_HOOK_URL must not be set in .dev.vars').toBeUndefined();
+});
 
 const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 

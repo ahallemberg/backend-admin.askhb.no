@@ -34,7 +34,9 @@ authentication, and for capturing project screenshots straight into the bucket.
    ```
 
    Without the secret the worker saves normally and simply never triggers a
-   rebuild.
+   rebuild. The secret is production-only: never put `DEPLOY_HOOK_URL` in
+   `.dev.vars`, or the test suite's PUT tests would fire real builds -- and a
+   guard in the tests fails the run if it finds one there.
 
 5. **Check the screenshot settings**
 
