@@ -14,7 +14,35 @@ export interface Env {
     // Comma-separated hosts /screenshot may render, matched exactly. See
     // hostAllowed below.
     SCREENSHOT_HOSTS: string;
+    // Cloudflare Pages deploy hook for askhb.no, set with `wrangler secret put
+    // DEPLOY_HOOK_URL`. Optional so dev and tests run without one; absent means
+    // saves succeed and no rebuild fires.
+    DEPLOY_HOOK_URL?: string;
 }
+
+/*
+ * A successful save means the prerendered askhb.no is now stale, so ask
+ * Cloudflare Pages for a rebuild. Fire-and-forget by contract: a build that
+ * fails to start must never turn a successful save into a failed one, so the
+ * call rides ctx.waitUntil and failures are logged rather than thrown.
+ */
+const triggerDeployHook = (env: Env, ctx: ExecutionContext): void => {
+    if (!env.DEPLOY_HOOK_URL) {
+        return;
+    }
+
+    ctx.waitUntil(
+        fetch(env.DEPLOY_HOOK_URL, { method: 'POST' })
+            .then(response => {
+                if (!response.ok) {
+                    console.log(`Deploy hook responded ${response.status}`);
+                }
+            })
+            .catch(error => {
+                console.log(`Deploy hook unreachable: ${error}`);
+            }),
+    );
+};
 
 const hasValidHeader = (request: Request, env: Env): boolean => {
     return request.headers.get("X-Custom-API-Key") === env.AUTH_KEY_SECRET;
@@ -434,6 +462,7 @@ export default {
                         contentType: request.headers.get("content-type") ?? "application/octet-stream"
                     }
                 });
+                triggerDeployHook(env, ctx);
                 return new Response(`Put ${key} successfully!`, {status: 200, headers});
 
             default:
